@@ -14,10 +14,12 @@ from sqlalchemy import text
 import mysql.connector
 from urllib.parse import urlparse
 
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # Database credentials
-
-
-
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 MASTER_DB_HOST = os.getenv("MASTER_DB_HOST")
@@ -126,7 +128,9 @@ def generate_summary(data, prompt_type):
             return {"error": "Invalid prompt type."}
 
         instruction = PROMPT_TEMPLATES[prompt_type]()
-
+        
+        # TODO: Uncomment the below code to generate summary using OpenAI API
+        
         response = openai.ChatCompletion.create(
             model="gpt-4o",
             messages=[{"role": "system", "content": instruction},{"role": "user", "content": f"Here is the JSON data for processing:\n{json_data_string}"}],
@@ -1190,7 +1194,7 @@ def get_SeasonalityAnalysis(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, co
         WHERE
             "year" IN ({', '.join(map(str, years))})
             AND "propertyCode" = '{PROPERTY_CODE}'
-            AND "AsOfDate" = '{AS_OF_DATE   }';
+            AND "AsOfDate" = '{AS_OF_DATE}';
     """
         
         seasonality_data = fetch_data(conn, seasonality_query)
@@ -1211,6 +1215,171 @@ def get_SeasonalityAnalysis(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, co
         print(f"{err_msg}\nTraceback:\n{traceback_info}")
         return None, {"status_code": 0, "message": "Error fetching data", "error": str(e)}
     
+def get_AnnCancellationSummary(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
+    try:
+        past_year = year - 1
+        last_year_as_of_date = (datetime.strptime(AS_OF_DATE, "%Y-%m-%d") - timedelta(days=365)).strftime("%Y-%m-%d")
+
+        cancellation_cy_query = f"""
+            SELECT
+            CAST("AsOfDate" AS TEXT),
+            TRIM("month") AS "MonthName",
+            "rms" AS "CancelledNights",
+            ROUND("adr") AS "ADR",
+            ROUND("rev") AS "TotalLoss",
+            ROUND("occ", 2) AS "CancelledRatio",
+            "inv" AS "Total Inventory",
+            "avgleadtime" AS "AvgLeadTime",
+            "unsoldrms" AS "UnSoldRoom"
+        FROM
+            snp_annsmry_cancellation
+        WHERE
+            "propertyCode" = '{PROPERTY_CODE}'
+            AND "AsOfDate" = '{AS_OF_DATE}'
+            AND "year" = '{year}';
+        """
+
+        cancellation_cy_data = fetch_data(conn, cancellation_cy_query)
+
+        cancellation_ly_query = f"""
+            SELECT
+            CAST("AsOfDate" AS TEXT),
+            TRIM("month") AS "MonthName",
+            "rms" AS "CancelledNights",
+            ROUND("adr") AS "ADR",
+            ROUND("rev") AS "TotalLoss",
+            ROUND("occ", 2) AS "CancelledRatio",
+            "inv" AS "TotalInventory"
+            FROM
+                snp_annsmry_cancellation
+            WHERE
+                "propertyCode" = '{PROPERTY_CODE}'
+                AND "AsOfDate" = '{AS_OF_DATE}'
+                AND "year" = '{past_year}';
+        """
+
+        cancellation_ly_data = fetch_data(conn, cancellation_ly_query)
+
+        cancellation_stly_query = f"""
+            SELECT
+            CAST("AsOfDate" AS TEXT),
+            TRIM("month") AS "MonthName",
+            "rms" AS "CancelledNights",
+            ROUND("adr") AS "ADR",
+            ROUND("rev") AS "TotalLoss",
+            ROUND("occ", 2) AS "CancelledRatio",
+            "inv" AS "TotalInventory"
+            FROM
+                snp_annsmry_cancellation
+            WHERE
+                "propertyCode" = '{PROPERTY_CODE}'
+                AND "AsOfDate" = '{last_year_as_of_date}'
+                AND "year" = '{past_year}';
+        """
+
+        cancellation_stly_data = fetch_data(conn, cancellation_stly_query)
+
+        cancellation_monthly_pace_query = f"""
+                SELECT
+                TRIM("Month") AS "MonthName",
+                SUM(CP_LIST."CP0") AS "CP0",
+                SUM(CP_LIST."CP1") AS "CP1",
+                SUM(CP_LIST."CP2TO7") AS "CP2TO7",
+                SUM(CP_LIST."CP8TO15") AS "CP8TO15",
+                SUM(CP_LIST."CP16TO30") AS "CP16TO30",
+                SUM(CP_LIST."CP31TO60") AS "CP31TO60",
+                SUM(CP_LIST."CP61TO90") AS "CP61TO90",
+                SUM(CP_LIST."CP91TOUP") AS "CP91TOUP",
+
+                ROUND(SUM(CP_LIST."CP0_REV")) AS "CP0_REV",
+                ROUND(SUM(CP_LIST."CP1_REV")) AS "CP1_REV",
+                ROUND(SUM(CP_LIST."CP2TO7_REV")) AS "CP2TO7_REV",
+                ROUND(SUM(CP_LIST."CP8TO15_REV")) AS "CP8TO15_REV",
+                ROUND(SUM(CP_LIST."CP16TO30_REV")) AS "CP16TO30_REV",
+                ROUND(SUM(CP_LIST."CP31TO60_REV")) AS "CP31TO60_REV",
+                ROUND(SUM(CP_LIST."CP61TO90_REV")) AS "CP61TO90_REV",
+                ROUND(SUM(CP_LIST."CP91TOUP_REV")) AS "CP91TOUP_REV",
+
+                CASE
+                    WHEN SUM(CP_LIST."CP0") <> 0 THEN ROUND((ROUND(SUM(CP_LIST."CP0_REV")) / SUM(CP_LIST."CP0")))
+                    ELSE 0
+                END AS "CP0_ADR",
+                CASE
+                    WHEN SUM(CP_LIST."CP1") <> 0 THEN ROUND((ROUND(SUM(CP_LIST."CP1_REV")) / SUM(CP_LIST."CP1")))
+                    ELSE 0
+                END AS "CP1_ADR",
+                CASE
+                    WHEN SUM(CP_LIST."CP2TO7") <> 0 THEN ROUND((ROUND(SUM(CP_LIST."CP2TO7_REV")) / SUM(CP_LIST."CP2TO7")))
+                    ELSE 0
+                END AS "CP2TO7_ADR",
+                CASE
+                    WHEN SUM(CP_LIST."CP8TO15") <> 0 THEN ROUND((ROUND(SUM(CP_LIST."CP8TO15_REV")) / SUM(CP_LIST."CP8TO15")))
+                    ELSE 0
+                END AS "CP8TO15_ADR",
+                CASE
+                    WHEN SUM(CP_LIST."CP16TO30") <> 0 THEN ROUND((ROUND(SUM(CP_LIST."CP16TO30_REV")) / SUM(CP_LIST."CP16TO30")))
+                    ELSE 0
+                END AS "CP16TO30_ADR",
+                CASE
+                    WHEN SUM(CP_LIST."CP31TO60") <> 0 THEN ROUND((ROUND(SUM(CP_LIST."CP31TO60_REV")) / SUM(CP_LIST."CP31TO60")))
+                    ELSE 0
+                END AS "CP31TO60_ADR",
+                CASE
+                    WHEN SUM(CP_LIST."CP61TO90") <> 0 THEN ROUND((ROUND(SUM(CP_LIST."CP61TO90_REV")) / SUM(CP_LIST."CP61TO90")))
+                    ELSE 0
+                END AS "CP61TO90_ADR",
+                CASE
+                    WHEN SUM(CP_LIST."CP91TOUP") <> 0 THEN ROUND((ROUND(SUM(CP_LIST."CP91TOUP_REV")) / SUM(CP_LIST."CP91TOUP")))
+                    ELSE 0
+                END AS "CP91TOUP_ADR"
+
+            FROM (
+                SELECT
+                    TO_CHAR("StayDate", 'month') AS "Month",
+                    CASE WHEN ("ArrivalDate" - "CancellationDate") = 0 THEN 1 ELSE 0 END AS "CP0",
+                    CASE WHEN ("ArrivalDate" - "CancellationDate") = 1 THEN 1 ELSE 0 END AS "CP1",
+                    CASE WHEN ("ArrivalDate" - "CancellationDate") BETWEEN 2 AND 7 THEN 1 ELSE 0 END AS "CP2TO7",
+                    CASE WHEN ("ArrivalDate" - "CancellationDate") BETWEEN 8 AND 15 THEN 1 ELSE 0 END AS "CP8TO15",
+                    CASE WHEN ("ArrivalDate" - "CancellationDate") BETWEEN 16 AND 30 THEN 1 ELSE 0 END AS "CP16TO30",
+                    CASE WHEN ("ArrivalDate" - "CancellationDate") BETWEEN 31 AND 60 THEN 1 ELSE 0 END AS "CP31TO60",
+                    CASE WHEN ("ArrivalDate" - "CancellationDate") BETWEEN 61 AND 90 THEN 1 ELSE 0 END AS "CP61TO90",
+                    CASE WHEN ("ArrivalDate" - "CancellationDate") >= 91 THEN 1 ELSE 0 END AS "CP91TOUP",
+
+                    CASE WHEN ("ArrivalDate" - "CancellationDate") = 0 THEN "Rate" ELSE 0 END AS "CP0_REV",
+                    CASE WHEN ("ArrivalDate" - "CancellationDate") = 1 THEN "Rate" ELSE 0 END AS "CP1_REV",
+                    CASE WHEN ("ArrivalDate" - "CancellationDate") BETWEEN 2 AND 7 THEN "Rate" ELSE 0 END AS "CP2TO7_REV",
+                    CASE WHEN ("ArrivalDate" - "CancellationDate") BETWEEN 8 AND 15 THEN "Rate" ELSE 0 END AS "CP8TO15_REV",
+                    CASE WHEN ("ArrivalDate" - "CancellationDate") BETWEEN 16 AND 30 THEN "Rate" ELSE 0 END AS "CP16TO30_REV",
+                    CASE WHEN ("ArrivalDate" - "CancellationDate") BETWEEN 31 AND 60 THEN "Rate" ELSE 0 END AS "CP31TO60_REV",
+                    CASE WHEN ("ArrivalDate" - "CancellationDate") BETWEEN 61 AND 90 THEN "Rate" ELSE 0 END AS "CP61TO90_REV",
+                    CASE WHEN ("ArrivalDate" - "CancellationDate") >= 91 THEN "Rate" ELSE 0 END AS "CP91TOUP_REV"
+
+                FROM copy_mst_reservation
+                WHERE "propertyCode" = '{PROPERTY_CODE}'
+                    AND "AsOfDate" = '{AS_OF_DATE}'
+                    AND "Status" IN ('C')
+                    AND TO_CHAR("StayDate", 'yyyy') = '{year}'
+                    AND TO_CHAR("StayDate", 'mm') BETWEEN '01' AND '12'
+            ) CP_LIST
+            GROUP BY "Month";
+        """
+
+        cancellation_monthly_pace_data = fetch_data(conn, cancellation_monthly_pace_query)
+
+        response_json = {
+            "cancellation_cy": cancellation_cy_data,
+            "cancellation_ly": cancellation_ly_data,
+            "cancellation_stly": cancellation_stly_data,
+            "cancellation_monthly_pace": cancellation_monthly_pace_data
+        }
+
+        check_data(response_json, componentname, AS_OF_DATE, PROPERTY_CODE, CLIENT_ID, db_connection_string)
+
+    except Exception as e:
+        err_msg = f"Error : {str(e)}"
+        traceback_info = traceback.format_exc()
+        print(f"{err_msg}\nTraceback:\n{traceback_info}")
+        return None, {"status_code": 0, "message": "Error fetching data", "error": str(e)}
 
 def get_client_ids(conn_str):
     try:
@@ -1301,7 +1470,8 @@ def main():
                         # "PickupCommon",
                         # "SegmentDrillDown",
                         # "ORG",
-                        "SeasonalityAnalysis",
+                        # "SeasonalityAnalysis",
+                        "AnnCancellationSummary",
                         ]
             
             for widget in widget_list:
