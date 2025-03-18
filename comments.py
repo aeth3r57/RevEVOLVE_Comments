@@ -101,6 +101,63 @@ def get_market_seg_room_type(PROPERTY_CODE, conn):
         traceback_info = traceback.format_exc()
         print(f"{err_msg}\nTraceback:\n{traceback_info}")
 
+def get_client_ids(conn_str):
+    try:
+        url = urlparse(conn_str)
+        connection = mysql.connector.connect(
+            host=url.hostname,
+            user=url.username,
+            password=url.password,
+            database=url.path[1:],  # Removing the leading '/'
+        )
+
+        if connection.is_connected():
+            query = f"""SELECT clientid FROM mst_client;"""
+            cursor = connection.cursor(dictionary=True)
+            try:
+                cursor.execute(query)
+                result = cursor.fetchall()
+                client_ids = [client["clientid"] for client in result]
+                return client_ids
+            except Exception as e:
+                print("Error:", e)
+                return None
+            finally:
+                cursor.close()
+    except Exception as e:
+        err_msg = f"Error : {str(e)}"
+        traceback_info = traceback.format_exc()
+        print(f"{err_msg}\nTraceback:\n{traceback_info}")
+    finally:
+        pass
+
+def get_property_codes(CLIENT_ID_LIST, conn_str):
+    CLIENT_PROPERTY_LIST = []
+    try:
+        for CLIENT_ID in CLIENT_ID_LIST:
+            config_db_conn = db_config.get_db_connection(PROPERTY_DATABASE='', clientId=CLIENT_ID, connection_string=conn_str)
+            if config_db_conn is None:
+                print(f"❌ Failed to connect to database for CLIENT_ID: {CLIENT_ID}. Skipping.")
+                continue
+            else:
+                query = text("SELECT propertycode FROM pro_property WHERE isactive = TRUE;")
+                try:
+                    result = config_db_conn.execute(query)
+                    property_codes = [row["propertycode"] for row in result.mappings()]
+                    CLIENT_PROPERTY_LIST.extend([[CLIENT_ID, prop] for prop in property_codes])
+                except Exception as e:
+                    print("Error:", e)
+                    return None
+                finally:
+                    config_db_conn.close()
+        return CLIENT_PROPERTY_LIST
+    except Exception as e:
+        err_msg = f"Error : {str(e)}"
+        traceback_info = traceback.format_exc()
+        print(f"{err_msg}\nTraceback:\n{traceback_info}")
+    finally:
+        pass
+
 def fetch_data(conn, query, params=None):
             """Fetch data using a cursor, format results, and return them as a list of dictionaries."""
             formatted_results = []
@@ -589,262 +646,206 @@ def get_ORG(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
         pickup_date = as_of_date - timedelta(days=1)
         seven_day_pickup_date = as_of_date - timedelta(days=7)
 
+        pickup_date = pickup_date.strftime("%Y-%m-%d")
+        seven_day_pickup_date = seven_day_pickup_date.strftime("%Y-%m-%d")
 
-        transient_current_year_query = text("""
-    SELECT
-        "OutOfOrder" AS "OOO",
-        CAST("Dates" AS TEXT) AS "Date",
-        "Inventory" AS "RoomAvailable",
-        CAST("AvailableOccupancy" AS INTEGER) AS "LeftToSell",
-        "RoomSold" AS "OnTheBook",
-        CAST("Occperc" AS INTEGER) AS "TotalOCCPercentage",
-        CAST("ADR" AS INTEGER) AS "ADR",
-        CAST("TotalRevenue" AS INTEGER) AS "REV",
-        CAST("RevPAR" AS INTEGER) AS "RevPAR",
-        "GroupOTB" AS "OTB",
-        "GroupBlock" AS "Block"
-    FROM
-        dailydata_transaction
-    WHERE
-        "AsOfDate" = :as_of_date
-        AND "propertyCode" = :property_code
-        AND "Dates" BETWEEN
-            DATE_TRUNC('month', :as_of_date)
-            AND
-            (DATE_TRUNC('month', :as_of_date) + INTERVAL '1 month' - INTERVAL '1 day')
-""")
-
-        transient_current_year_json = fetch_data(conn, transient_current_year_query, {
-            "as_of_date": as_of_date,
-            "property_code": PROPERTY_CODE
-        })
-
-
-        bar_based_stats_proc = text("""
-            DO $$ 
-            DECLARE
-                code text := :property_code;
-                start_date DATE := :start_date;
-                end_date DATE := :end_date;
-                asofdate DATE := :as_of_date;
-            BEGIN
-                DROP TABLE IF EXISTS temp_forcast_r28;   
-                CREATE TEMP TABLE temp_forcast_r28 AS 
-                SELECT
-                    asofdate as "AsOfDate",
-                    generate_series(
-                        start_date,
-                        end_date,
-                        interval '1 DAY'
-                    )::date AS "StayDate",
-                    0 as "OTB",
-                    0 as "8 Week Rolling AVG"; 
-
-                DROP TABLE IF EXISTS temp_intermediate;
-                CREATE TEMP TABLE temp_intermediate AS (
-                    SELECT
-                        "AsOfDate",
-                        "StayDate",
-                        SUM("RoomNight") AS "OTB"
-                    FROM copy_mst_reservation
-                    WHERE
-                        "propertyCode" = code
-                        AND "AsOfDate" = asofdate
-                        AND "StayDate" BETWEEN (start_date::date - INTERVAL '56 days') AND end_date
-                        AND "BarBased" = 'Y'
-                        AND "Pace" = 'PACE'
-                        AND "Status" IN ('I', 'R', 'O')
-                    GROUP BY
-                        "AsOfDate",
-                        "StayDate"
-                );
-
-                UPDATE temp_forcast_r28 
-                SET "OTB" = (
-                    SELECT SUM("OTB") 
-                    FROM temp_intermediate
-                    WHERE temp_forcast_r28."StayDate" = temp_intermediate."StayDate"
-                );
-
-                UPDATE temp_forcast_r28 
-                SET "8 Week Rolling AVG" = (
-                    SELECT ROUND(AVG("OTB"))
-                    FROM temp_intermediate
-                    WHERE temp_intermediate."StayDate" IN (
-                        (temp_forcast_r28."StayDate"::date - INTERVAL '7 days'), 
-                        (temp_forcast_r28."StayDate"::date - INTERVAL '14 days'), 
-                        (temp_forcast_r28."StayDate"::date - INTERVAL '21 days'),
-                        (temp_forcast_r28."StayDate"::date - INTERVAL '28 days'),
-                        (temp_forcast_r28."StayDate"::date - INTERVAL '35 days'),
-                        (temp_forcast_r28."StayDate"::date - INTERVAL '42 days'),
-                        (temp_forcast_r28."StayDate"::date - INTERVAL '49 days'),
-                        (temp_forcast_r28."StayDate"::date - INTERVAL '56 days')
-                    )
-                    LIMIT 1
-                );
-
-            END $$;
-        """)
-
-        # Execute the PL/pgSQL block
-        conn.execute(bar_based_stats_proc, {
-            "property_code": PROPERTY_CODE,
-            "start_date": start_date,
-            "end_date": end_date,
-            "as_of_date": as_of_date
-        })
-
-        # Step 2: Fetch data from temp table
-        bar_based_stats_query = text("""
+        transient_current_year_query =  f"""
             SELECT
-                CAST("AsOfDate" AS TEXT),
-                CAST("StayDate" AS TEXT),
-                COALESCE("OTB", 0) AS "OTB",
-                COALESCE("8 Week Rolling AVG", 0) AS "8 Week Rolling AVG"
-            FROM temp_forcast_r28;
-        """)
-
-        # Fetch and return results
-        bar_based_stats_json = fetch_data(conn, bar_based_stats_query, {})
-
-        # 🚀 Rateshop Query
-        rateshop_query = text("""
-            SELECT 
-                rp.competiterpropertyname,
-                trs."DayOfWeek",
-                trs."Rate",
-                trs."Channel",
-                trs."IsLowestRate",
-                trs."IsBarRate",
-                CAST(trs."AsOfDate" AS TEXT) AS "AsOfDate",
-                CAST(trs."CheckInDate" AS TEXT) AS "CheckInDate",
-                AVG(trs."Rate") OVER (
-                    PARTITION BY trs."CompetitorID", trs."CheckInDate"
-                ) AS "Competitor_Avg_Rate"
-            FROM 
-                rs_history_rate_shop trs 
-            LEFT JOIN
-                rev_propertycompetiters rp 
-                ON rp.competiterpropertycode = CAST(trs."CompetitorID" AS TEXT) 
+                "OutOfOrder" AS "OOO",
+                CAST("Dates" AS TEXT) AS "Date",
+                "Inventory" AS "RoomAvailable",
+                CAST("AvailableOccupancy" AS INTEGER) AS "LeftToSell",
+                "RoomSold" AS "OnTheBook",
+                CAST("Occperc" AS INTEGER) AS "TotalOCCPercentage",
+                CAST("ADR" AS INTEGER),
+                CAST("TotalRevenue" AS INTEGER) AS "REV",
+                CAST("RevPAR" AS INTEGER),
+                "GroupOTB" AS "OTB",
+                "GroupBlock" AS "Block"
+            FROM
+                dailydata_transaction
             WHERE
-                trs."PropertyCode" = :property_code
-                AND trs."AsOfDate" = :as_of_date
-                AND trs."CheckInDate" BETWEEN :start_date AND :end_date
-                AND trs."Channel" = 'Brand'
-            ORDER BY 
-                trs."CheckInDate", rp.competiterpropertyname
-        """)
+                "AsOfDate" = '{AS_OF_DATE}'
+                AND "propertyCode" = '{PROPERTY_CODE}'
+                AND "Dates" BETWEEN '{start_date}' AND '{end_date}';
+        """
 
-        rateshop_json = fetch_data(conn, rateshop_query, {
-            "property_code": PROPERTY_CODE,
-            "as_of_date": as_of_date,
-            "start_date": start_date,
-            "end_date": end_date
-        })
+        transient_current_year_json = fetch_data(conn, transient_current_year_query)
 
+        bar_based_stats_query = f"""
+             DO $$ 
+                DECLARE
+                    code TEXT := '{PROPERTY_CODE}';
+                    start_date DATE := '{start_date}';
+                    end_date DATE := '{end_date}';
+                    asofdate DATE := '{AS_OF_DATE}';
+                BEGIN
+                    
+                    DROP TABLE IF EXISTS temp_forcast_r28;   
+                    CREATE TEMP TABLE temp_forcast_r28 AS 
+                    SELECT
+                        asofdate AS "AsOfDate",
+                        generate_series(
+                            start_date,
+                            end_date,
+                            interval '1 DAY'
+                        )::date AS "StayDate",
+                        0 AS "OTB",
+                        0 AS "8 Week Rolling AVG"; 
 
-        # 🚀 One-Day Pickup Query
-        one_day_pickup_query = text("""
+                    DROP TABLE IF EXISTS temp_intermediate;
+                    CREATE TEMP TABLE temp_intermediate AS (
+                        SELECT
+                            "AsOfDate",
+                            "StayDate",
+                            SUM("RoomNight") AS "OTB"
+                        FROM
+                            copy_mst_reservation
+                        WHERE
+                            "propertyCode" = code
+                            AND "AsOfDate" = asofdate
+                            AND "StayDate" BETWEEN (start_date::date - INTERVAL '56 days') AND end_date
+                            AND "BarBased" = 'Y'
+                            AND "Pace" = 'PACE'
+                            AND "Status" IN ('I', 'R', 'O')
+                        GROUP BY
+                            "AsOfDate",
+                            "StayDate"
+                    );
+                                        
+                    UPDATE temp_forcast_r28 
+                    SET "OTB" = (
+                        SELECT SUM("OTB") 
+                        FROM temp_intermediate
+                        WHERE temp_forcast_r28."StayDate" = temp_intermediate."StayDate"
+                    );		
+                            
+                    UPDATE temp_forcast_r28 
+                    SET "8 Week Rolling AVG" = (
+                        SELECT ROUND(AVG("OTB"))
+                        FROM temp_intermediate
+                        WHERE temp_intermediate."StayDate" IN (
+                            (temp_forcast_r28."StayDate"::date - INTERVAL '7 days'),
+                            (temp_forcast_r28."StayDate"::date - INTERVAL '14 days'),
+                            (temp_forcast_r28."StayDate"::date - INTERVAL '21 days'),
+                            (temp_forcast_r28."StayDate"::date - INTERVAL '28 days'),
+                            (temp_forcast_r28."StayDate"::date - INTERVAL '35 days'),
+                            (temp_forcast_r28."StayDate"::date - INTERVAL '42 days'),
+                            (temp_forcast_r28."StayDate"::date - INTERVAL '49 days'),
+                            (temp_forcast_r28."StayDate"::date - INTERVAL '56 days')
+                        )
+                        LIMIT 1
+                    );
+
+                END $$;  
+
+                SELECT
+                    CAST("AsOfDate" AS TEXT),
+                    CAST("StayDate" AS TEXT),
+                    CASE 
+                        WHEN "OTB" IS NULL THEN 0
+                        ELSE "OTB"
+                    END AS "OTB",
+                    CASE 
+                        WHEN "8 Week Rolling AVG" IS NULL THEN 0
+                        ELSE "8 Week Rolling AVG"
+                    END AS "8 Week Rolling AVG"	
+                FROM temp_forcast_r28;
+            """
+
+        bar_based_stats_json = fetch_data(conn, bar_based_stats_query)
+
+        one_day_pickup_query = f"""
             SELECT 
                 sub1."AsOfDate",
                 sub1."Dates",
                 (sub1."OTB1" - sub2."OTB2") AS "RMS",
-                CAST(round((sub1."TotalRevenue1" - sub2."TotalRevenue2")) as INTEGER) AS "REV",
+                CAST(ROUND((sub1."TotalRevenue1" - sub2."TotalRevenue2")) AS INTEGER) AS "REV",
                 CASE 
-                    WHEN (sub1."OTB1" - sub2."OTB2") <> 0 AND (sub1."TotalRevenue1" - sub2."TotalRevenue2") <> 0 THEN
-                        CAST(round((sub1."TotalRevenue1" - sub2."TotalRevenue2") / (sub1."OTB1" - sub2."OTB2")) as INTEGER) 
+                    WHEN (sub1."OTB1" - sub2."OTB2") <> 0 
+                        AND (sub1."TotalRevenue1" - sub2."TotalRevenue2") <> 0 
+                    THEN CAST(ROUND((sub1."TotalRevenue1" - sub2."TotalRevenue2") / (sub1."OTB1" - sub2."OTB2")) AS INTEGER) 
                     ELSE 0
                 END AS "ADR"
             FROM (
                 SELECT 
-                    CAST("AsOfDate" as TEXT),
-                    CAST("Dates" as TEXT),
-                    "RoomSold" as "OTB1",
-                    "TotalRevenue" as "TotalRevenue1" 
+                    CAST("AsOfDate" AS TEXT),
+                    CAST("Dates" AS TEXT),
+                    "RoomSold" AS "OTB1",
+                    "TotalRevenue" AS "TotalRevenue1" 
                 FROM dailydata_transaction
                 WHERE
-                    "AsOfDate" = :as_of_date
-                    AND "propertyCode" = :property_code
-                    AND "Dates" BETWEEN :start_date AND :end_date
+                    "AsOfDate" = '{AS_OF_DATE}' 
+                    AND "propertyCode" = '{PROPERTY_CODE}' 
+                    AND "Dates" BETWEEN '{start_date}' AND '{end_date}'
             ) sub1
             LEFT JOIN (
                 SELECT 
-                    CAST("AsOfDate" as TEXT),
-                    CAST("Dates" as TEXT),
-                    "RoomSold" as "OTB2",
-                    "TotalRevenue" as "TotalRevenue2" 
+                    CAST("AsOfDate" AS TEXT),
+                    CAST("Dates" AS TEXT),
+                    "RoomSold" AS "OTB2",
+                    "TotalRevenue" AS "TotalRevenue2" 
                 FROM dailydata_transaction
                 WHERE
-                    "AsOfDate" = :pickup_date
-                    AND "propertyCode" = :property_code
-                    AND "Dates" BETWEEN :start_date AND :end_date
-            ) sub2 ON sub1."Dates" = sub2."Dates"
-        """)
+                    "AsOfDate" = '{pickup_date}'
+                    AND "propertyCode" = '{PROPERTY_CODE}' 
+                    AND "Dates" BETWEEN '{start_date}' AND '{end_date}'
+            ) sub2 
+            ON sub1."Dates" = sub2."Dates";
+        """
 
-        one_day_pickup_json = fetch_data(conn, one_day_pickup_query, {
-            "as_of_date": as_of_date,
-            "property_code": PROPERTY_CODE,
-            "start_date": start_date,
-            "end_date": end_date,
-            "pickup_date": pickup_date
-        })
+        one_day_pickup_json = fetch_data(conn, one_day_pickup_query)
 
-
-        # 🚀 Seven-Day Pickup Query
-        seven_day_pickup_query = text("""
+        seven_day_pickup_query = f"""
             SELECT 
                 sub1."AsOfDate",
                 sub1."Dates",
                 (sub1."OTB1" - sub2."OTB2") AS "RMS",
-                CAST(round((sub1."TotalRevenue1" - sub2."TotalRevenue2")) as INTEGER) AS "REV",
+                CAST(ROUND((sub1."TotalRevenue1" - sub2."TotalRevenue2")) AS INTEGER) AS "REV",
                 CASE 
-                    WHEN (sub1."OTB1" - sub2."OTB2") <> 0 AND (sub1."TotalRevenue1" - sub2."TotalRevenue2") <> 0 THEN
-                        CAST(round((sub1."TotalRevenue1" - sub2."TotalRevenue2") / (sub1."OTB1" - sub2."OTB2")) as INTEGER) 
+                    WHEN (sub1."OTB1" - sub2."OTB2") <> 0 
+                        AND (sub1."TotalRevenue1" - sub2."TotalRevenue2") <> 0 
+                    THEN CAST(ROUND((sub1."TotalRevenue1" - sub2."TotalRevenue2") / (sub1."OTB1" - sub2."OTB2")) AS INTEGER) 
                     ELSE 0
                 END AS "ADR"
             FROM (
                 SELECT 
-                    CAST("AsOfDate" as TEXT),
-                    CAST("Dates" as TEXT),
-                    "RoomSold" as "OTB1",
-                    "TotalRevenue" as "TotalRevenue1" 
+                    CAST("AsOfDate" AS TEXT),
+                    CAST("Dates" AS TEXT),
+                    "RoomSold" AS "OTB1",
+                    "TotalRevenue" AS "TotalRevenue1" 
                 FROM dailydata_transaction
                 WHERE
-                    "AsOfDate" = :as_of_date
-                    AND "propertyCode" = :property_code
-                    AND "Dates" BETWEEN :start_date AND :end_date
+                    "AsOfDate" = '{AS_OF_DATE}' 
+                    AND "propertyCode" = '{PROPERTY_CODE}' 
+                    AND "Dates" BETWEEN '{start_date}' AND '{end_date}'
             ) sub1
             LEFT JOIN (
                 SELECT 
-                    CAST("AsOfDate" as TEXT),
-                    CAST("Dates" as TEXT),
-                    "RoomSold" as "OTB2",
-                    "TotalRevenue" as "TotalRevenue2" 
+                    CAST("AsOfDate" AS TEXT),
+                    CAST("Dates" AS TEXT),
+                    "RoomSold" AS "OTB2",
+                    "TotalRevenue" AS "TotalRevenue2" 
                 FROM dailydata_transaction
                 WHERE
-                    "AsOfDate" = :seven_day_pickup_date
-                    AND "propertyCode" = :property_code
-                    AND "Dates" BETWEEN :start_date AND :end_date
-            ) sub2 ON sub1."Dates" = sub2."Dates"
-        """)
+                    "AsOfDate" = '{seven_day_pickup_date}'
+                    AND "propertyCode" = '{PROPERTY_CODE}' 
+                    AND "Dates" BETWEEN '{start_date}' AND '{end_date}'
+            ) sub2 
+            ON sub1."Dates" = sub2."Dates";
+        """
 
-        seven_day_pickup_json = fetch_data(conn, seven_day_pickup_query, {
-            "as_of_date": as_of_date,
-            "property_code": PROPERTY_CODE,
-            "start_date": start_date,
-            "end_date": end_date,
-            "seven_day_pickup_date": seven_day_pickup_date
-        })
+        seven_day_pickup_json = fetch_data(conn, seven_day_pickup_query)
 
-        # Step 1: Execute the PL/pgSQL block (without returning results)
-        pricing_forecast_proc = text("""
+        pricing_forecast_query = f"""
             DO $$ 
             DECLARE
-                propertycode text := :property_code;
-                start_date DATE := :start_date;
-                end_date DATE := :end_date;
-                asofdate DATE := :as_of_date;
+                propertycode TEXT := '{PROPERTY_CODE}';
+                start_date DATE := '{start_date}';
+                end_date DATE := '{end_date}';
+                asofdate DATE := '{AS_OF_DATE}';
             BEGIN
+            
                 DROP TABLE IF EXISTS temp_forcast_r28;   
                 CREATE TEMP TABLE temp_forcast_r28 AS 
                 SELECT
@@ -852,12 +853,12 @@ def get_ORG(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
                     generate_series(
                         start_date,
                         end_date,
-                        interval '1 DAY'
-                    )::date AS "Dates",
+                        INTERVAL '1 DAY'
+                    )::DATE AS "Dates",
                     0 AS "RMS",
                     0 AS "R28AVG",
                     0 AS "Optimal Bar"; 
-                
+            
                 DROP TABLE IF EXISTS temp_intermediate;
                 CREATE TEMP TABLE temp_intermediate AS (
                     SELECT
@@ -867,11 +868,11 @@ def get_ORG(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
                         ROUND("ADR") AS "ADR"
                     FROM dailydata_transaction
                     WHERE
-                        "propertyCode" = propertycode 
-                        AND "AsOfDate" = asofdate
-                        AND "Dates" BETWEEN start_date AND end_date
+                        dailydata_transaction."propertyCode" = propertycode 
+                        AND dailydata_transaction."AsOfDate" = asofdate
+                        AND dailydata_transaction."Dates" BETWEEN start_date AND end_date
                 );
-
+                            
                 DROP TABLE IF EXISTS temp_intermediate2;
                 CREATE TEMP TABLE temp_intermediate2 AS (
                     SELECT
@@ -881,49 +882,54 @@ def get_ORG(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
                         ROUND("Rate") AS "Rate"
                     FROM snp_dbd_forecast
                     WHERE
-                        "propertyCode" = propertycode 
-                        AND "AsOfDate" = asofdate
-                        AND "Date" BETWEEN start_date AND end_date
-                );
-
-                UPDATE temp_forcast_r28 SET "RMS" = (
-                    SELECT "RoomSold"
+                        snp_dbd_forecast."propertyCode" = propertycode 
+                        AND snp_dbd_forecast."AsOfDate" = asofdate
+                        AND snp_dbd_forecast."Date" BETWEEN start_date AND end_date
+                );								
+                
+                UPDATE temp_forcast_r28 
+                SET "RMS" = (
+                    SELECT temp_intermediate."RoomSold"
                     FROM temp_intermediate
                     WHERE temp_intermediate."Dates" = temp_forcast_r28."Dates" LIMIT 1
                 ) WHERE "Dates" < asofdate;
-
-                UPDATE temp_forcast_r28 SET "RMS" = (
-                    SELECT "Occupancy"
+            
+                UPDATE temp_forcast_r28 
+                SET "RMS" = (
+                    SELECT temp_intermediate2."Occupancy" 
                     FROM temp_intermediate2
                     WHERE temp_intermediate2."Date" = temp_forcast_r28."Dates" LIMIT 1
                 ) WHERE "Dates" >= asofdate;
-
-                UPDATE temp_forcast_r28 SET "Optimal Bar" = (
-                    SELECT "ADR"
+                            
+                UPDATE temp_forcast_r28 
+                SET "Optimal Bar" = (
+                    SELECT temp_intermediate."ADR"
                     FROM temp_intermediate
                     WHERE temp_intermediate."Dates" = temp_forcast_r28."Dates" LIMIT 1
                 ) WHERE "Dates" < asofdate;
-
-                UPDATE temp_forcast_r28 SET "Optimal Bar" = (
-                    SELECT ROUND("Rate")
+            
+                UPDATE temp_forcast_r28 
+                SET "Optimal Bar" = (
+                    SELECT ROUND(temp_intermediate2."Rate")
                     FROM temp_intermediate2
                     WHERE temp_intermediate2."Date" = temp_forcast_r28."Dates" LIMIT 1
                 ) WHERE "Dates" >= asofdate;
-
-                UPDATE temp_forcast_r28 SET "R28AVG" = (
+            
+                UPDATE temp_forcast_r28 
+                SET "R28AVG" = (
                     SELECT ROUND(AVG("RoomSold"))
                     FROM dailydata_transaction
-                    WHERE "AsOfDate" = asofdate
-                    AND "Dates" IN (
-                        (temp_forcast_r28."Dates"::date - INTERVAL '7 days'),
-                        (temp_forcast_r28."Dates"::date - INTERVAL '14 days'),
-                        (temp_forcast_r28."Dates"::date - INTERVAL '21 days'),
-                        (temp_forcast_r28."Dates"::date - INTERVAL '28 days')
-                    )
+                    WHERE
+                        dailydata_transaction."AsOfDate" = asofdate
+                        AND dailydata_transaction."Dates" IN (
+                            (temp_forcast_r28."Dates"::DATE - INTERVAL '7 days'), 
+                            (temp_forcast_r28."Dates"::DATE - INTERVAL '14 days'), 
+                            (temp_forcast_r28."Dates"::DATE - INTERVAL '21 days'),
+                            (temp_forcast_r28."Dates"::DATE - INTERVAL '28 days')
+                        )
                 ) WHERE "Dates" <= asofdate + INTERVAL '6 days';
-
-                -- Handle data after asofdate + 6 days
-                DROP TABLE IF EXISTS temp_forcast_r28_after_asofdate_plus_day;
+            
+                DROP TABLE IF EXISTS temp_forcast_r28_after_asofdate_plus_day;   
                 CREATE TEMP TABLE temp_forcast_r28_after_asofdate_plus_day AS 
                 SELECT
                     asofdate AS "AsOfDate",
@@ -931,59 +937,59 @@ def get_ORG(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
                         asofdate,
                         asofdate + INTERVAL '6 days',
                         INTERVAL '1 DAY'
-                    )::date AS "Dates", 0 AS "R28AVG";
-
-                UPDATE temp_forcast_r28_after_asofdate_plus_day SET "R28AVG" = (
+                    )::DATE AS "Dates", 0 AS "R28AVG";
+                
+                UPDATE temp_forcast_r28_after_asofdate_plus_day 
+                SET "R28AVG" = (
                     SELECT ROUND(AVG("RoomSold"))
                     FROM dailydata_transaction
-                    WHERE "AsOfDate" = asofdate
-                    AND "Dates" IN (
-                        (temp_forcast_r28_after_asofdate_plus_day."Dates"::date - INTERVAL '7 days'),
-                        (temp_forcast_r28_after_asofdate_plus_day."Dates"::date - INTERVAL '14 days'),
-                        (temp_forcast_r28_after_asofdate_plus_day."Dates"::date - INTERVAL '21 days'),
-                        (temp_forcast_r28_after_asofdate_plus_day."Dates"::date - INTERVAL '28 days')
-                    )
-                ) WHERE "Dates" <= asofdate + INTERVAL '6 days';
-
-                UPDATE temp_forcast_r28 SET "R28AVG" = temp_forcast_r28_after_asofdate_plus_day."R28AVG"
+                    WHERE
+                        dailydata_transaction."AsOfDate" = asofdate
+                        AND dailydata_transaction."Dates" IN (
+                            (temp_forcast_r28_after_asofdate_plus_day."Dates"::DATE - INTERVAL '7 days'), 
+                            (temp_forcast_r28_after_asofdate_plus_day."Dates"::DATE - INTERVAL '14 days'), 
+                            (temp_forcast_r28_after_asofdate_plus_day."Dates"::DATE - INTERVAL '21 days'),
+                            (temp_forcast_r28_after_asofdate_plus_day."Dates"::DATE - INTERVAL '28 days')
+                        )
+                ) WHERE "Dates"<= asofdate + INTERVAL '6 days';
+            
+                UPDATE temp_forcast_r28
+                SET "R28AVG" = temp_forcast_r28_after_asofdate_plus_day."R28AVG"
                 FROM temp_forcast_r28_after_asofdate_plus_day
-                WHERE TO_CHAR(temp_forcast_r28."Dates", 'Day') = TO_CHAR(temp_forcast_r28_after_asofdate_plus_day."Dates", 'Day')
-                AND temp_forcast_r28."Dates" > asofdate + INTERVAL '6 days';
-
+                WHERE 
+                    TO_CHAR(temp_forcast_r28."Dates", 'Day') = TO_CHAR(temp_forcast_r28_after_asofdate_plus_day."Dates", 'Day')
+                    AND temp_forcast_r28."Dates" > asofdate + INTERVAL '6 days';
+            
             END $$;
-        """)
 
-        # Execute the PL/pgSQL block
-        conn.execute(pricing_forecast_proc, {
-            "property_code": PROPERTY_CODE,
-            "start_date": start_date,
-            "end_date": end_date,
-            "as_of_date": as_of_date
-        })
-
-        # Step 2: Fetch data from temp table
-        pricing_forecast_query = text("""
             SELECT *,
-                TO_CHAR("AsOfDate", 'YYYY-MM-DD') AS "AsOfDate",
-                TO_CHAR("Dates", 'YYYY-MM-DD') AS "Dates"
+            TO_CHAR("AsOfDate", 'YYYY-MM-DD') AS "AsOfDate",
+            TO_CHAR("Dates", 'YYYY-MM-DD') AS "Dates"
             FROM temp_forcast_r28;
-        """)
+        """
 
-        # Fetch results safely
-        pricing_forecast_json = fetch_data(conn, pricing_forecast_query, {})
+        pricing_forecast_json = fetch_data(conn, pricing_forecast_query)
+
+        channel_term_query = f"""
+            SELECT * 
+            FROM rev_rateshopconfig
+            WHERE propertyid = {property_id}
+            ORDER BY rateshopconfigid DESC
+            LIMIT 1;
+        """
 
         response_json = {
-            "Transient_Current_Year": transient_current_year_json,
-            "Bar_Based_Stats": bar_based_stats_json,
-            "One_Day_Pickup": one_day_pickup_json,
-            "Seven_Day_Pickup": seven_day_pickup_json,
+            # "Transient_Current_Year": transient_current_year_json,
+            # "Bar_Based_Stats": bar_based_stats_json,
+            # "One_Day_Pickup": one_day_pickup_json,
+            # "Seven_Day_Pickup": seven_day_pickup_json,
             "Pricing_Forecast": pricing_forecast_json,
-            "Rate_Shop": rateshop_json
+        #     "Rate_Shop": rateshop_json
         }
         
-        # print("Response JSON:", response_json)
+        print("Response JSON:", response_json)
 
-        check_data(response_json, componentname, AS_OF_DATE, PROPERTY_CODE, CLIENT_ID, db_connection_string)
+        # check_data(response_json, componentname, AS_OF_DATE, PROPERTY_CODE, CLIENT_ID, db_connection_string)
 
         return
     except Exception as e:
@@ -1383,7 +1389,100 @@ def get_AnnCancellationSummary(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn,
 
 def get_BookingCurveNew(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
     try:
-        pass
+        forecast_using_90days_pickup_query = f"""
+            DO $$
+            DECLARE 
+                todaydate DATE := '{AS_OF_DATE}';
+                asofdate DATE := '{AS_OF_DATE}';
+                noofprevdays INTEGER := 90;  
+                noofnextdays INTEGER := 90;
+                noofDBAPU INTEGER := 90;
+                noofDBAPUDayIntervel INTEGER := 1;
+                propertyCode TEXT := '{PROPERTY_CODE}';
+                cnt INTEGER := 0;
+            BEGIN
+            
+                -- Create temp_date_table
+                DROP TABLE IF EXISTS temp_date_table;
+                CREATE TEMP TABLE temp_date_table AS
+                SELECT 
+                    generate_series(
+                        todaydate - noofprevdays,
+                        todaydate + noofnextdays,
+                        INTERVAL '1 DAY'
+                    )::date AS "staydate",
+                    0 AS day_diff,
+                    0 AS total_booking,
+                    0 AS ly_booking,
+                    0 AS forcastroom,
+                    0 AS pu_avg,
+                    0 AS dba_avg;
+                UPDATE temp_date_table 
+                SET day_diff = (staydate - todaydate);
+                -- Create temp_pms_res
+                DROP TABLE IF EXISTS temp_pms_res;
+                CREATE TEMP TABLE temp_pms_res AS
+                SELECT 
+                    "StayDate",
+                    "BookingDate"
+                FROM 
+                    copy_mst_reservation
+                WHERE
+                    "AsOfDate" = asofdate
+                    AND "propertyCode" = propertyCode
+                    AND "RateCode" NOT IN ('GROUP~')
+                    AND "Status" IN ('R', 'O', 'I')
+                    AND "StayDate" BETWEEN (todaydate - noofprevdays - INTERVAL '1 YEAR') AND (todaydate + noofnextdays);
+                -- Update total bookings
+                UPDATE temp_date_table 
+                SET total_booking = (
+                    SELECT COUNT(*)
+                    FROM temp_pms_res
+                    WHERE temp_pms_res."StayDate"::date = temp_date_table."staydate"
+                );
+                -- Update last year bookings
+                UPDATE temp_date_table 
+                SET ly_booking = (
+                    SELECT COUNT(*)
+                    FROM temp_pms_res
+                    WHERE temp_pms_res."StayDate"::date = temp_date_table."staydate" - INTERVAL '1 YEAR'
+                );
+                -- Forecast calculations using a loop
+                WHILE cnt < (noofDBAPU + noofDBAPUDayIntervel) LOOP
+                    EXECUTE format('ALTER TABLE temp_date_table ADD COLUMN IF NOT EXISTS dba_%s INT', noofDBAPU - cnt);
+                    EXECUTE format('ALTER TABLE temp_date_table ADD COLUMN IF NOT EXISTS pu_%s INT', noofDBAPU - cnt);
+                    
+                    EXECUTE format(
+                        'UPDATE temp_date_table SET pu_%s = (SELECT COUNT(*) FROM temp_pms_res WHERE temp_pms_res."StayDate"::date = temp_date_table.staydate AND temp_pms_res."BookingDate"::date > temp_date_table.staydate - %s)',
+                        noofDBAPU - cnt, noofDBAPU - cnt
+                    );
+                    EXECUTE format(
+                        'UPDATE temp_date_table SET dba_%s = temp_date_table."total_booking" - pu_%s',
+                        noofDBAPU - cnt, noofDBAPU - cnt
+                    );
+                    cnt := cnt + noofDBAPUDayIntervel;
+                END LOOP;
+            END $$;
+            -- Retrieve Results
+            SELECT *, 
+                CAST("staydate" AS TEXT),
+                TRIM(TRAILING FROM TO_CHAR("staydate", 'Day')) AS "Weekday"
+            FROM temp_date_table
+            ORDER BY CAST("staydate" AS TEXT);
+            """
+        forecast_using_90days_pickup_json = fetch_data(conn, forecast_using_90days_pickup_query)
+        response_json = {
+            "forecast_using_90days_pickup": forecast_using_90days_pickup_json
+        }
+        # print("Response JSON:", response_json)
+        # check_data(response_json, componentname, AS_OF_DATE, PROPERTY_CODE, CLIENT_ID, db_connection_string)
+
+    except Exception as e:
+            err_msg = f"Error fetching booking curve data: {str(e)}"
+            traceback_info = traceback.format_exc()
+            print(f"{err_msg}\nTraceback:\n{traceback_info}")
+            return None, {"status_code": 0, "message": "Error fetching data", "error": str(e)}
+    
     except Exception as e:
         err_msg = f"Error : {str(e)}"
         traceback_info = traceback.format_exc()
@@ -1391,62 +1490,7 @@ def get_BookingCurveNew(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, compon
     finally:
         pass
 
-def get_client_ids(conn_str):
-    try:
-        url = urlparse(conn_str)
-        connection = mysql.connector.connect(
-            host=url.hostname,
-            user=url.username,
-            password=url.password,
-            database=url.path[1:],  # Removing the leading '/'
-        )
 
-        if connection.is_connected():
-            query = f"""SELECT clientid FROM mst_client;"""
-            cursor = connection.cursor(dictionary=True)
-            try:
-                cursor.execute(query)
-                result = cursor.fetchall()
-                client_ids = [client["clientid"] for client in result]
-                return client_ids
-            except Exception as e:
-                print("Error:", e)
-                return None
-            finally:
-                cursor.close()
-    except Exception as e:
-        err_msg = f"Error : {str(e)}"
-        traceback_info = traceback.format_exc()
-        print(f"{err_msg}\nTraceback:\n{traceback_info}")
-    finally:
-        pass
-
-def get_property_codes(CLIENT_ID_LIST, conn_str):
-    CLIENT_PROPERTY_LIST = []
-    try:
-        for CLIENT_ID in CLIENT_ID_LIST:
-            config_db_conn = db_config.get_db_connection(PROPERTY_DATABASE='', clientId=CLIENT_ID, connection_string=conn_str)
-            if config_db_conn is None:
-                print(f"❌ Failed to connect to database for CLIENT_ID: {CLIENT_ID}. Skipping.")
-                continue
-            else:
-                query = text("SELECT propertycode FROM pro_property WHERE isactive = TRUE;")
-                try:
-                    result = config_db_conn.execute(query)
-                    property_codes = [row["propertycode"] for row in result.mappings()]
-                    CLIENT_PROPERTY_LIST.extend([[CLIENT_ID, prop] for prop in property_codes])
-                except Exception as e:
-                    print("Error:", e)
-                    return None
-                finally:
-                    config_db_conn.close()
-        return CLIENT_PROPERTY_LIST
-    except Exception as e:
-        err_msg = f"Error : {str(e)}"
-        traceback_info = traceback.format_exc()
-        print(f"{err_msg}\nTraceback:\n{traceback_info}")
-    finally:
-        pass
 
 def main():
     print("Starting")
@@ -1478,10 +1522,11 @@ def main():
                         # "AnnualSummary", 
                         # "ForecastCommon", 
                         # "PickupCommon",
+                        "ORG",
                         # "SegmentDrillDown",
-                        # "ORG",
                         # "SeasonalityAnalysis",
-                        "AnnCancellationSummary",
+                        # "AnnCancellationSummary",
+                        # "BookingCurveNew",
                         ]
             
             for widget in widget_list:

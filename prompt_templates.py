@@ -376,7 +376,6 @@ def test_booking_curve_2():
     return f"""
     You are an AI model designed to analyze hotel forecast data and pricing trends. Your task is to generate structured insights while adhering strictly to the final output format. Follow these steps carefully:
   
-    
      1️⃣ Extract and process the data:
 
     Identify key booking trends from OTB, forecast, and DBA values over the next 90 days.
@@ -385,14 +384,12 @@ def test_booking_curve_2():
 
     2️⃣ Generate insights using the exact format below:
 
-
     📅 Forecast for Next 90 Days (Nov 29, 2024 - Feb 27, 2025)
     📊 Booking Trends: [Summarized OTB performance, YoY changes, DBA insights]
     🔍 Pricing Insights: [ML rate vs. Competitor average, pricing gaps]
     📢 Actionable Strategy: [Precise revenue optimization recommendations]
 
     3️⃣ Ensure strict formatting rules:
-
 
     Use emojis/icons (📅, 📊, 🔹 ) to enhance readability.
     Show percentage changes with up/down icons (🔼 for increase, 🔽 for decrease).
@@ -407,20 +404,13 @@ def test_booking_curve_2():
     ✔ Maintain structured formatting with section headers and icons.
     ✔ Mention the year (e.g., 2025) at the end of each date.
 
-
     ❌ Don’ts:
     ✖ Do not deviate from the specified output format.
     ✖ Avoid long explanations or irrelevant details.
     ✖ Do not omit pricing analysis or competitor rate comparisons.
     ✖ Do not include speculative recommendations—base everything on data.
 
-
-    📌 Expected AI Output (Strict Format)
-
-
-    📅 Forecast for Next 90 Days (Nov 29, 2024 - Feb 27, 2025)  
-
-
+    📌 Expected AI Output (Strict Format)  
     📅  Forecast for Next 90 Days (Nov 29, 2024 - Feb 27, 2025)
 
     🔹 Booking Trends: OTB bookings show strong performance on dates like Jan 5,2025(72 bookings, 🔼 +227% YoY) and Feb 18,2025 (78 bookings, 🔼 +359% YoY). Conversely, dates like Dec 15,2024 (20 bookings, 🔽 -44% YoY) and Dec 22,2024 (22 bookings, 🔽 -21% YoY) indicate weaker demand. 55% of bookings occur within the last 15 days, with last-minute pickups increasing by 35% on peak days.
@@ -430,7 +420,6 @@ def test_booking_curve_2():
     🔹 Actionable Strategy: Increase rates by 🔼 5-10% on high-demand dates like Jan 5 and Feb 18, while applying 🔽 10-15% discounts on low-performing dates like Dec 15 and Dec 22. Implement dynamic pricing for last-minute bookings, ensuring flash sales on slow-moving dates while avoiding deep discounts during peak demand periods. 
 
     📌 AI must strictly follow this format without deviation.
-
     Additional Conditions:  
     - Do not generate random values; use *only* the provided JSON file. 
     - Ensure precise YoY calculations for rooms sold, revenue, and ADR.  
@@ -449,8 +438,6 @@ def test_booking_curve_2():
         - Do NOT increase font size; just make headings bold.
         - Use emojis/icons (📅, 📊, 🔍, 📢, 🔹 ) to enhance readability.
         - Each section must begin with the 🔹 icon, and the output must not omit or modify this formatting.
-
-
     """
 
 def seasonality():
