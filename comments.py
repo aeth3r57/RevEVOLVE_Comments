@@ -1381,6 +1381,16 @@ def get_AnnCancellationSummary(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn,
         print(f"{err_msg}\nTraceback:\n{traceback_info}")
         return None, {"status_code": 0, "message": "Error fetching data", "error": str(e)}
 
+def get_BookingCurveNew(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
+    try:
+        pass
+    except Exception as e:
+        err_msg = f"Error : {str(e)}"
+        traceback_info = traceback.format_exc()
+        print(f"{err_msg}\nTraceback:\n{traceback_info}")
+    finally:
+        pass
+
 def get_client_ids(conn_str):
     try:
         url = urlparse(conn_str)
