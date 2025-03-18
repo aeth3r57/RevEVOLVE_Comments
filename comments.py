@@ -970,6 +970,9 @@ def get_ORG(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
 
         pricing_forecast_json = fetch_data(conn, pricing_forecast_query)
 
+        property_id_query = f"""
+
+        """
         channel_term_query = f"""
             SELECT * 
             FROM rev_rateshopconfig
@@ -1522,10 +1525,10 @@ def main():
                         # "AnnualSummary", 
                         # "ForecastCommon", 
                         # "PickupCommon",
-                        "ORG",
+                        # "ORG",
                         # "SegmentDrillDown",
                         # "SeasonalityAnalysis",
-                        # "AnnCancellationSummary",
+                        "AnnCancellationSummary",
                         # "BookingCurveNew",
                         ]
             
