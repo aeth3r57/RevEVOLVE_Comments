@@ -140,11 +140,11 @@ def get_property_codes(CLIENT_ID_LIST, conn_str):
                 print(f"❌ Failed to connect to database for CLIENT_ID: {CLIENT_ID}. Skipping.")
                 continue
             else:
-                query = text("SELECT propertycode FROM pro_property WHERE isactive = TRUE;")
+                query = text("SELECT propertyid, propertycode FROM pro_property WHERE isactive = TRUE;")
                 try:
                     result = config_db_conn.execute(query)
-                    property_codes = [row["propertycode"] for row in result.mappings()]
-                    CLIENT_PROPERTY_LIST.extend([[CLIENT_ID, prop] for prop in property_codes])
+                    property_data = [(row["propertyid"], row["propertycode"]) for row in result.mappings()]
+                    CLIENT_PROPERTY_LIST.extend([[CLIENT_ID, prop_id, prop_code] for prop_id, prop_code in property_data])
                 except Exception as e:
                     print("Error:", e)
                     return None
@@ -210,7 +210,7 @@ def generate_summary(data, prompt_type):
         print(f"{err_msg}\nTraceback:\n{traceback_info}")
         return (f"error: {str(e)}")
 
-def save_comments(comments, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, db_connection_string, componentname):
+def save_comments(comments, PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, db_connection_string, componentname):
     try:
         conn = db_config.get_db_connection(PROPERTY_DATABASE='', clientId=CLIENT_ID, connection_string=db_connection_string)
 
@@ -225,9 +225,9 @@ def save_comments(comments, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, db_connection_
         print("User ID:", user_id)
 
         # ✅ Fetch Property ID
-        property_id_query = text('SELECT propertyid FROM pro_property WHERE propertycode = :property_code ORDER BY propertyid LIMIT 1')
-        property_id = conn.execute(property_id_query, {"property_code": PROPERTY_CODE}).scalar()
-        print("Property ID:", property_id)
+        # property_id_query = text('SELECT propertyid FROM pro_property WHERE propertycode = :property_code ORDER BY propertyid LIMIT 1')
+        # property_id = conn.execute(property_id_query, {"property_code": PROPERTY_CODE}).scalar()
+        # print("Property ID:", property_id)
 
         createdon = arrow.get(AS_OF_DATE).replace(hour=23, minute=59, second=59)
         print("Created On:", createdon)
@@ -247,7 +247,7 @@ def save_comments(comments, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, db_connection_
             delete_comment_query.bindparams(
                 widget_id=widget_id,
                 user_id=user_id,
-                property_id=property_id,
+                property_id=PROPERTY_ID,
                 title=f"{componentname} By Nova"  # Dynamically set title
             )
         )
@@ -291,7 +291,7 @@ def save_comments(comments, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, db_connection_
         if 'conn' in locals() and conn is not None:
             conn.close()
 
-def check_data(response_json, componentname, AS_OF_DATE, PROPERTY_CODE, CLIENT_ID, db_connection_string):
+def check_data(response_json, componentname, AS_OF_DATE, PROPERTY_ID, PROPERTY_CODE, CLIENT_ID, db_connection_string):
     try:
         if not isinstance(response_json, dict):
             print("❌ Error: Data is not in dictionary format.")
@@ -317,7 +317,7 @@ def check_data(response_json, componentname, AS_OF_DATE, PROPERTY_CODE, CLIENT_I
     finally:
         pass
 
-def get_AnnualSummary(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
+def get_AnnualSummary(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
     try:
         total_ly_query = """
             SELECT 
@@ -391,7 +391,7 @@ def get_AnnualSummary(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componen
             "total_ly": total_ly_json
         }
 
-        check_data(response_json, componentname, AS_OF_DATE, PROPERTY_CODE, CLIENT_ID, db_connection_string)
+        check_data(response_json, componentname, AS_OF_DATE, PROPERTY_ID, PROPERTY_CODE, CLIENT_ID, db_connection_string)
 
     except Exception as e:
         err_msg = f"Error fetching annual summary data: {str(e)}"
@@ -399,7 +399,7 @@ def get_AnnualSummary(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componen
         print(f"{err_msg}\nTraceback:\n{traceback_info}")
         return None, {"status_code": 0, "message": "Error fetching data", "error": str(e)}
 
-def get_ForecastCommon(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
+def get_ForecastCommon(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
     try:
         
         otb_query = """
@@ -496,7 +496,7 @@ def get_ForecastCommon(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, compone
             "Budget": ann_budget_json
         }
 
-        check_data(response_json, componentname, AS_OF_DATE, PROPERTY_CODE, CLIENT_ID, db_connection_string)
+        check_data(response_json, componentname, AS_OF_DATE, PROPERTY_ID, PROPERTY_CODE, CLIENT_ID, db_connection_string)
     
     except Exception as e:
         err_msg = f"Error : {str(e)}"
@@ -504,7 +504,7 @@ def get_ForecastCommon(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, compone
         print(f"{err_msg}\nTraceback:\n{traceback_info}")
         return None, {"status_code": 0, "message": "Error fetching data", "error": str(e)}
     
-def get_PickupCommon(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
+def get_PickupCommon(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
     try:
         otb_query = """
             SELECT 
@@ -628,7 +628,7 @@ def get_PickupCommon(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, component
 
         # print("Response JSON:", response_json)
 
-        check_data(response_json, componentname, AS_OF_DATE, PROPERTY_CODE, CLIENT_ID, db_connection_string)
+        check_data(response_json, componentname, AS_OF_DATE, PROPERTY_ID, PROPERTY_CODE, CLIENT_ID, db_connection_string)
 
         return 
     
@@ -638,7 +638,7 @@ def get_PickupCommon(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, component
         print(f"{err_msg}\nTraceback:\n{traceback_info}")
         return None, {"status_code": 0, "message": "Error fetching data", "error": str(e)}
 
-def get_ORG(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
+def get_ORG(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
     try:
         start_date, end_date = get_month_start_end_dates(AS_OF_DATE)
         
@@ -970,29 +970,52 @@ def get_ORG(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
 
         pricing_forecast_json = fetch_data(conn, pricing_forecast_query)
 
-        property_id_query = f"""
-
-        """
         channel_term_query = f"""
             SELECT * 
             FROM rev_rateshopconfig
-            WHERE propertyid = {property_id}
+            WHERE propertyid = {PROPERTY_ID}
             ORDER BY rateshopconfigid DESC
             LIMIT 1;
         """
+
+        channel_term_json = fetch_data(conn, channel_term_query)
+        channel_term = channel_term_json[0]["channel_term"] if channel_term_json else None
+        
+        rate_shop_query = f"""
+            SELECT 
+                rp.competiterpropertyname, 
+                trs.*, 
+                CAST(trs."AsOfDate" AS TEXT),
+                CAST(trs."CheckInDate" AS TEXT)
+            FROM 
+                rs_history_rate_shop trs 
+            LEFT JOIN
+                rev_propertycompetiters rp 
+                ON rp.competiterpropertycode = CAST(trs."CompetitorID" AS TEXT)
+            WHERE
+                trs."PropertyCode" = '{PROPERTY_CODE}' 
+                AND trs."AsOfDate" = '{AS_OF_DATE}'
+                AND trs."CheckInDate" BETWEEN '{start_date}' AND '{end_date}'
+                AND trs."Channel" = '{channel_term}'
+                AND trs."PropertyCode" = '{PROPERTY_CODE}'
+            ORDER BY 
+                trs."CheckInDate", rp."competiterpropertyname";
+        """
+
+        rate_shop_json = fetch_data(conn, rate_shop_query)
 
         response_json = {
             # "Transient_Current_Year": transient_current_year_json,
             # "Bar_Based_Stats": bar_based_stats_json,
             # "One_Day_Pickup": one_day_pickup_json,
             # "Seven_Day_Pickup": seven_day_pickup_json,
-            "Pricing_Forecast": pricing_forecast_json,
-        #     "Rate_Shop": rateshop_json
+            # "Pricing_Forecast": pricing_forecast_json,
+            "Rate_Shop": rate_shop_json,
         }
         
         print("Response JSON:", response_json)
 
-        # check_data(response_json, componentname, AS_OF_DATE, PROPERTY_CODE, CLIENT_ID, db_connection_string)
+        # check_data(response_json, componentname, AS_OF_DATE, PROPERTY_ID, PROPERTY_CODE, CLIENT_ID, db_connection_string)
 
         return
     except Exception as e:
@@ -1001,7 +1024,7 @@ def get_ORG(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
         print(f"{err_msg}\nTraceback:\n{traceback_info}")
         return None, {"status_code": 0, "message": "Error fetching data", "error": str(e)}
 
-def get_SegmentDrillDown(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
+def get_SegmentDrillDown(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
     try:
         # Compute dynamic start and end dates
         left_start_date, left_end_date = get_month_start_end_dates(AS_OF_DATE)
@@ -1174,7 +1197,7 @@ def get_SegmentDrillDown(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, compo
         # rounded_response = json.dumps(rounded_response, ensure_ascii=False, indent=2)
         print("Response JSON:", rounded_response)
 
-        check_data(rounded_response, componentname, AS_OF_DATE, PROPERTY_CODE, CLIENT_ID, db_connection_string)
+        check_data(rounded_response, componentname, AS_OF_DATE, PROPERTY_ID, PROPERTY_CODE, CLIENT_ID, db_connection_string)
 
         return rounded_response
 
@@ -1184,7 +1207,7 @@ def get_SegmentDrillDown(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, compo
         print(f"{err_msg}\nTraceback:\n{traceback_info}")
         return None, {"status_code": 0, "message": "Error fetching data", "error": str(e)}
 
-def get_SeasonalityAnalysis(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
+def get_SeasonalityAnalysis(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
     try:
         years = [year - i for i in range(5)]
 
@@ -1214,7 +1237,7 @@ def get_SeasonalityAnalysis(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, co
 
         # print("Response JSON:", response_json)
 
-        check_data(response_json, componentname, AS_OF_DATE, PROPERTY_CODE, CLIENT_ID, db_connection_string)
+        check_data(response_json, componentname, AS_OF_DATE, PROPERTY_ID, PROPERTY_CODE, CLIENT_ID, db_connection_string)
 
         return response_json
 
@@ -1224,7 +1247,7 @@ def get_SeasonalityAnalysis(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, co
         print(f"{err_msg}\nTraceback:\n{traceback_info}")
         return None, {"status_code": 0, "message": "Error fetching data", "error": str(e)}
     
-def get_AnnCancellationSummary(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
+def get_AnnCancellationSummary(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
     try:
         past_year = year - 1
         last_year_as_of_date = (datetime.strptime(AS_OF_DATE, "%Y-%m-%d") - timedelta(days=365)).strftime("%Y-%m-%d")
@@ -1382,7 +1405,7 @@ def get_AnnCancellationSummary(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn,
             "cancellation_monthly_pace": cancellation_monthly_pace_data
         }
 
-        check_data(response_json, componentname, AS_OF_DATE, PROPERTY_CODE, CLIENT_ID, db_connection_string)
+        check_data(response_json, componentname, AS_OF_DATE, PROPERTY_ID, PROPERTY_CODE, CLIENT_ID, db_connection_string)
 
     except Exception as e:
         err_msg = f"Error : {str(e)}"
@@ -1390,7 +1413,7 @@ def get_AnnCancellationSummary(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn,
         print(f"{err_msg}\nTraceback:\n{traceback_info}")
         return None, {"status_code": 0, "message": "Error fetching data", "error": str(e)}
 
-def get_BookingCurveNew(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
+def get_BookingCurveNew(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, componentname):
     try:
         forecast_using_90days_pickup_query = f"""
             DO $$
@@ -1478,7 +1501,7 @@ def get_BookingCurveNew(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, compon
             "forecast_using_90days_pickup": forecast_using_90days_pickup_json
         }
         # print("Response JSON:", response_json)
-        # check_data(response_json, componentname, AS_OF_DATE, PROPERTY_CODE, CLIENT_ID, db_connection_string)
+        check_data(response_json, componentname, AS_OF_DATE, PROPERTY_ID, PROPERTY_CODE, CLIENT_ID, db_connection_string)
 
     except Exception as e:
             err_msg = f"Error fetching booking curve data: {str(e)}"
@@ -1497,19 +1520,20 @@ def get_BookingCurveNew(PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, compon
 
 def main():
     print("Starting")
+
     # start_time = time.time() 
-    
     # CLIENT_ID_LIST = get_client_ids(db_connection_string)
     # print("Client IDs:", CLIENT_ID_LIST)
     # CLIENT_PROPERTY_LIST = get_property_codes(CLIENT_ID_LIST, db_connection_string)
     # print("Client Property List:", CLIENT_PROPERTY_LIST)
     # end_time = time.time()
-
     # print(f"\nTime taken for finding property codes: {end_time - start_time} seconds")
+
+
     start_time = time.time() 
-    CLIENT_PROPERTY_LIST = [[6, 'HK_AC32AW']]
-    print("Processing Comments for all properties")
-    for CLIENT_ID, PROPERTY_CODE in CLIENT_PROPERTY_LIST:
+    CLIENT_PROPERTY_LIST = [[1, 47, 'AC32AW']]
+    # print("Processing Comments for all properties")
+    for CLIENT_ID, PROPERTY_ID, PROPERTY_CODE in CLIENT_PROPERTY_LIST:
 
         conn = db_config.get_db_connection(PROPERTY_DATABASE=PROPERTY_CODE, clientId=CLIENT_ID, connection_string=db_connection_string)
 
@@ -1517,7 +1541,7 @@ def main():
             print(f"❌ Failed to connect to database for {PROPERTY_CODE}. Skipping.")
             return
 
-        print(f"Processing Comments for Property Code: {PROPERTY_CODE}")
+        print(f"Processing Comments for Property: {PROPERTY_ID, PROPERTY_CODE}")
         AS_OF_DATE, year = get_asofdate(PROPERTY_CODE, conn)
 
         if AS_OF_DATE is not None and year is not None:
@@ -1525,10 +1549,10 @@ def main():
                         # "AnnualSummary", 
                         # "ForecastCommon", 
                         # "PickupCommon",
-                        # "ORG",
+                        "ORG",
                         # "SegmentDrillDown",
                         # "SeasonalityAnalysis",
-                        "AnnCancellationSummary",
+                        # "AnnCancellationSummary",
                         # "BookingCurveNew",
                         ]
             
@@ -1537,7 +1561,7 @@ def main():
 
                 if function_name in globals():
                     print(f"Fetching {widget} data and Generating Comments")
-                    globals()[function_name](PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, widget)
+                    globals()[function_name](PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, widget)
                     print(f"✅ {function_name} executed successfully:")
                 else:
                     print(f"❌ Function {function_name} not found.")
