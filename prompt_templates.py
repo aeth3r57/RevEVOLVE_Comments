@@ -23,12 +23,10 @@ def annual_summary():
 
 
     📊 Today's Report [YYYY-MM-DD]
- 
-    🔹 [Current Month] Performance
-    As of [YYYY-MM-DD], there were X rooms booked, earning $X with an ADR of $X, which is better/worse than the same time last year when there were X rooms sold (🔼/🔽 X% YoY), grossing $X (🔼/🔽 X% YoY) with an ADR of $X (🔼/🔽 X% YoY). ADR dropped from $X last year to $X (🔼/🔽 X%), but revenue still increased/decreased by X%. This suggests more/fewer rooms were sold at a lower/higher rate, impacting total revenue.
-    🔹 [Next Month] Performance
-    As of [YYYY-MM-DD], there were X rooms booked, earning $X with an ADR of $X, which is better/worse than the same time last year when there were X rooms sold (🔼/🔽 X% YoY), grossing $X (🔼/🔽 X% YoY) with an ADR of $X (🔼/🔽 X% YoY). ADR dropped from $X last year to $X (🔼/🔽 X%), but revenue still increased/decreased by X%. This suggests higher/lower demand despite lower/higher rates, leading to increased/decreased revenue.
- 
+    🔹 [Current Month] Performance As of [YYYY-MM-DD], there were X rooms booked, earning $X with an ADR of $X, which is better/worse than the same time last year when there were X rooms sold (🔼/🔽 X% YoY), grossing $X (🔼/🔽 X% YoY) with an ADR of $X (🔼/🔽 X% YoY). ADR dropped from $X last year to $X (🔼/🔽 X%), but revenue still increased/decreased by X% (or remained nearly the same with a $X difference if the change is less than 1%). This suggests more/fewer rooms were sold at a lower/higher rate, impacting total revenue.
+    
+    🔹 [Next Month] Performance As of [YYYY-MM-DD], there were X rooms booked, earning $X with an ADR of $X, which is better/worse than the same time last year when there were X rooms sold (🔼/🔽 X% YoY), grossing $X (🔼/🔽 X% YoY) with an ADR of $X (🔼/🔽 X% YoY). ADR dropped from $X last year to $X (🔼/🔽 X%), but revenue still increased/decreased by X% (or remained nearly the same with a $X difference if the change is less than 1%). This suggests higher/lower demand despite lower/higher rates, leading to increased/decreased revenue.
+    
  
     Example Output:  
 

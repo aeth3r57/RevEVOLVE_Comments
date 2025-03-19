@@ -989,7 +989,7 @@ def get_ORG(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, compo
                 trs."DayOfWeek",
                 trs."Rate",
                 trs."Channel",
-                ROUND(comp_avg."Competitor_Avg_Rate", 0) AS "Competitor_Avg_Rate"
+                ROUND(comp_avg."Competitor_Avg_Rate", 2) AS "Competitor_Avg_Rate"
             FROM
                 rs_history_rate_shop trs
             LEFT JOIN
@@ -998,7 +998,7 @@ def get_ORG(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, compo
             LEFT JOIN (
                 SELECT
                     trs."CheckInDate",
-                    ROUND(AVG(trs."Rate"), 2) AS "Competitor_Avg_Rate"
+                    ROUND(AVG(trs."Rate"), 0) AS "Competitor_Avg_Rate"
                 FROM
                     rs_history_rate_shop trs
                 LEFT JOIN
@@ -1020,7 +1020,7 @@ def get_ORG(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, compo
             ORDER BY
                 trs."CheckInDate", rp.competiterpropertyname;
         """
-
+        
         rate_shop_json = fetch_data(conn, rate_shop_query)
 
         response_json = {
