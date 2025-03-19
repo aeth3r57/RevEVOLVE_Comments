@@ -1005,11 +1005,11 @@ def get_ORG(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, compo
         rate_shop_json = fetch_data(conn, rate_shop_query)
 
         response_json = {
-            # "Transient_Current_Year": transient_current_year_json,
-            # "Bar_Based_Stats": bar_based_stats_json,
-            # "One_Day_Pickup": one_day_pickup_json,
-            # "Seven_Day_Pickup": seven_day_pickup_json,
-            # "Pricing_Forecast": pricing_forecast_json,
+            "Transient_Current_Year": transient_current_year_json,
+            "Bar_Based_Stats": bar_based_stats_json,
+            "One_Day_Pickup": one_day_pickup_json,
+            "Seven_Day_Pickup": seven_day_pickup_json,
+            "Pricing_Forecast": pricing_forecast_json,
             "Rate_Shop": rate_shop_json,
         }
         
