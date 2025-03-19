@@ -982,24 +982,43 @@ def get_ORG(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, compo
         channel_term = channel_term_json[0]["channel_term"] if channel_term_json else None
         
         rate_shop_query = f"""
-            SELECT 
-                rp.competiterpropertyname, 
-                trs.*, 
-                CAST(trs."AsOfDate" AS TEXT),
-                CAST(trs."CheckInDate" AS TEXT)
-            FROM 
-                rs_history_rate_shop trs 
+            SELECT
+                CAST(trs."AsOfDate" AS TEXT) AS "AsOfDate",
+                CAST(trs."CheckInDate" AS TEXT) AS "CheckInDate",
+                rp.competiterpropertyname,
+                trs."DayOfWeek",
+                trs."Rate",
+                trs."Channel",
+                ROUND(comp_avg."Competitor_Avg_Rate", 0) AS "Competitor_Avg_Rate"
+            FROM
+                rs_history_rate_shop trs
             LEFT JOIN
-                rev_propertycompetiters rp 
+                rev_propertycompetiters rp
                 ON rp.competiterpropertycode = CAST(trs."CompetitorID" AS TEXT)
+            LEFT JOIN (
+                SELECT
+                    trs."CheckInDate",
+                    ROUND(AVG(trs."Rate"), 2) AS "Competitor_Avg_Rate"
+                FROM
+                    rs_history_rate_shop trs
+                LEFT JOIN
+                    rev_propertycompetiters rp
+                    ON rp.competiterpropertycode = CAST(trs."CompetitorID" AS TEXT)
+                WHERE
+                    rp.isself = FALSE
+                    AND trs."AsOfDate" = '{AS_OF_DATE}'
+                    AND trs."CheckInDate" BETWEEN '{start_date}' AND '{end_date}'
+                    AND trs."Channel" = '{channel_term}'
+                GROUP BY
+                    trs."CheckInDate"
+            ) comp_avg ON trs."CheckInDate" = comp_avg."CheckInDate"
             WHERE
-                trs."PropertyCode" = '{PROPERTY_CODE}' 
+                trs."PropertyCode" = '{PROPERTY_CODE}'
                 AND trs."AsOfDate" = '{AS_OF_DATE}'
                 AND trs."CheckInDate" BETWEEN '{start_date}' AND '{end_date}'
                 AND trs."Channel" = '{channel_term}'
-                AND trs."PropertyCode" = '{PROPERTY_CODE}'
-            ORDER BY 
-                trs."CheckInDate", rp."competiterpropertyname";
+            ORDER BY
+                trs."CheckInDate", rp.competiterpropertyname;
         """
 
         rate_shop_json = fetch_data(conn, rate_shop_query)
