@@ -989,7 +989,7 @@ def get_ORG(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, compo
                 trs."DayOfWeek",
                 trs."Rate",
                 trs."Channel",
-                ROUND(comp_avg."Competitor_Avg_Rate", 2) AS "Competitor_Avg_Rate"
+                ROUND(comp_avg."Competitor_Avg_Rate", 0) AS "Competitor_Avg_Rate"
             FROM
                 rs_history_rate_shop trs
             LEFT JOIN
