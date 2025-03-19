@@ -1516,8 +1516,6 @@ def get_BookingCurveNew(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year,
     finally:
         pass
 
-
-
 def main():
     print("Starting")
 
