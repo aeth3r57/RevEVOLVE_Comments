@@ -1519,18 +1519,18 @@ def get_BookingCurveNew(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year,
 def main():
     print("Starting")
 
-    # start_time = time.time() 
-    # CLIENT_ID_LIST = get_client_ids(db_connection_string)
-    # print("Client IDs:", CLIENT_ID_LIST)
-    # CLIENT_PROPERTY_LIST = get_property_codes(CLIENT_ID_LIST, db_connection_string)
-    # print("Client Property List:", CLIENT_PROPERTY_LIST)
-    # end_time = time.time()
-    # print(f"\nTime taken for finding property codes: {end_time - start_time} seconds")
-
-
     start_time = time.time() 
-    CLIENT_PROPERTY_LIST = [[1, 47, 'AC32AW']]
-    # print("Processing Comments for all properties")
+    CLIENT_ID_LIST = get_client_ids(db_connection_string)
+    print("Client IDs:", CLIENT_ID_LIST)
+    CLIENT_PROPERTY_LIST = get_property_codes(CLIENT_ID_LIST, db_connection_string)
+    print("Client Property List:", CLIENT_PROPERTY_LIST)
+    end_time = time.time()
+    print(f"\nTime taken for finding property codes: {end_time - start_time} seconds")
+
+
+    # start_time = time.time() 
+    # CLIENT_PROPERTY_LIST = [[1, 47, 'AC32AW']]
+    print("Processing Comments for all properties")
     for CLIENT_ID, PROPERTY_ID, PROPERTY_CODE in CLIENT_PROPERTY_LIST:
 
         conn = db_config.get_db_connection(PROPERTY_DATABASE=PROPERTY_CODE, clientId=CLIENT_ID, connection_string=db_connection_string)
