@@ -271,7 +271,7 @@ def save_comments(comments, PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, d
                 createdon=createdon,
                 comments=comments,
                 isactive=True,
-                property_id=property_id,
+                property_id=PROPERTY_ID,
                 asofdate=AS_OF_DATE,
                 title=f"{componentname} By Nova"
             )
@@ -306,7 +306,7 @@ def check_data(response_json, componentname, AS_OF_DATE, PROPERTY_ID, PROPERTY_C
                 print("Exiting")
                 return
             else:
-                save_comments(summary, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, db_connection_string, componentname)
+                save_comments(summary, PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, db_connection_string, componentname)
                 print("Comments saved successfully.")
                 return
             
@@ -1032,9 +1032,7 @@ def get_ORG(PROPERTY_ID, PROPERTY_CODE, AS_OF_DATE, CLIENT_ID, year, conn, compo
             "Rate_Shop": rate_shop_json,
         }
         
-        print("Response JSON:", response_json)
-
-        # check_data(response_json, componentname, AS_OF_DATE, PROPERTY_ID, PROPERTY_CODE, CLIENT_ID, db_connection_string)
+        check_data(response_json, componentname, AS_OF_DATE, PROPERTY_ID, PROPERTY_CODE, CLIENT_ID, db_connection_string)
 
         return
     except Exception as e:
@@ -1563,14 +1561,14 @@ def main():
 
         if AS_OF_DATE is not None and year is not None:
             widget_list = [
-                        # "AnnualSummary", 
-                        # "ForecastCommon", 
-                        # "PickupCommon",
+                        "AnnualSummary", 
+                        "ForecastCommon", 
+                        "PickupCommon",
                         "ORG",
-                        # "SegmentDrillDown",
-                        # "SeasonalityAnalysis",
-                        # "AnnCancellationSummary",
-                        # "BookingCurveNew",
+                        "SegmentDrillDown",
+                        "SeasonalityAnalysis",
+                        "AnnCancellationSummary",
+                        "BookingCurveNew",
                         ]
             
             for widget in widget_list:
